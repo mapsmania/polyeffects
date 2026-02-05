@@ -35,7 +35,7 @@
 <body>
 
 <div id="buttons">
-  <button id="btn-presentation">Presentation Mode</button>
+  <button id="btn-presentation">Play</button>
 </div>
 
 <div id="map"></div>
@@ -130,21 +130,8 @@ map.on('load', () => {
     document.querySelectorAll('#buttons button').forEach(b => b.classList.remove('active'));
   }
 
-  // ---------- PRESENTATION MODE ----------
-  function startPresentationMode() {
-    clearAnimation();
-    document.getElementById('btn-presentation').classList.add('active');
-    if (!audioStarted) {
-      audioCtx.resume().then(() => {
-        audioElement.play();
-        audioStarted = true;
-        animatePresentation();
-      });
-    } else {
-      animatePresentation();
-    }
-  }
-
+  // ---------- PRESENTATION MODE TOGGLE ----------
+  let presentationRunning = false;
   let effectIndex = 0;
   const effects = ['wave', 'scanner', 'fire', 'oscillate'];
   let effectStepTime = 5000; // change effect every 5 seconds
@@ -165,12 +152,9 @@ map.on('load', () => {
     const effect = effects[effectIndex];
 
     features.forEach((f, i) => {
-
-      // Map each floor to a frequency bin
       const binIndex = Math.floor((i / floors) * bufferLength);
       const intensity = dataArray[binIndex] / 255;
 
-      // Initialize color & height
       let color = DEFAULT_COLOR;
       let wave = 0;
 
@@ -184,10 +168,9 @@ map.on('load', () => {
           break;
 
         case 'scanner':
-          // Knight-Rider style
           const distance = Math.abs(i - scanner);
           let intensityScanner = Math.max(0, 1 - distance/4);
-          intensityScanner *= intensityScanner; // sharper falloff
+          intensityScanner *= intensityScanner;
           const rScan = Math.floor(150 + intensityScanner*105);
           const gScan = Math.floor(intensityScanner*50);
           const bScan = Math.floor(intensityScanner*50);
@@ -196,7 +179,6 @@ map.on('load', () => {
           break;
 
         case 'fire':
-          // Flickering effect
           const flicker = Math.random()*50;
           const rFire = 255;
           const gFire = Math.floor(i/floors*150 + flicker);
@@ -215,10 +197,8 @@ map.on('load', () => {
       f.properties.base = i*floorHeight + wave;
       f.properties.height = (i+1)*floorHeight + wave;
       f.properties.dynamicColor = color;
-
     });
 
-    // Update scanner position
     if (effects[effectIndex] === 'scanner') {
       scanner += scannerDir;
       if (scanner >= floors-1 || scanner <= 0) scannerDir *= -1;
@@ -229,8 +209,33 @@ map.on('load', () => {
     animationFrame = requestAnimationFrame(animatePresentation);
   }
 
+  function togglePresentationMode() {
+    if (!presentationRunning) {
+      clearAnimation();
+      document.getElementById('btn-presentation').classList.add('active');
+
+      if (!audioStarted) {
+        audioCtx.resume().then(() => {
+          audioElement.play();
+          audioStarted = true;
+          animatePresentation();
+        });
+      } else {
+        audioElement.play();
+        animatePresentation();
+      }
+
+      presentationRunning = true;
+    } else {
+      clearAnimation();
+      audioElement.pause();
+      document.getElementById('btn-presentation').classList.remove('active');
+      presentationRunning = false;
+    }
+  }
+
   // ---------- BUTTON ----------
-  document.getElementById('btn-presentation').addEventListener('click', startPresentationMode);
+  document.getElementById('btn-presentation').addEventListener('click', togglePresentationMode);
 
 });
 </script>
