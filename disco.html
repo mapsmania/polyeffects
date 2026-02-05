@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Polygon Effects - Audio Reactive</title>
+  <title>Polygon Effects</title>
   <link href="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.css" rel="stylesheet" />
   <style>
     body { margin:0; background: #070b1a; font-family: sans-serif; }
@@ -35,19 +35,19 @@
 <body>
 
 <div id="buttons">
-  <button id="btn-audio">Audio Reactive</button>
+  <button id="btn-presentation">Presentation Mode</button>
 </div>
 
 <div id="map"></div>
 
-<!-- Use a hosted MP3 with CORS -->
-<audio id="audio" src="dance.mp3" controls loop></audio>
+<!-- Hosted MP3 with CORS -->
+<audio id="audio" src="https://yourusername.github.io/repo-name/dance.mp3" controls loop></audio>
 
 <script src="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.js"></script>
 <script>
 const map = new maplibregl.Map({
   style: 'https://tiles.openfreemap.org/styles/bright',
-  center: [13.3881, 52.5173],
+  center: [13.3881, 52.5171],
   zoom: 18,
   pitch: 60,
   bearing: -20,
@@ -106,52 +106,131 @@ map.on('load', () => {
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   const source = audioCtx.createMediaElementSource(audioElement);
   const analyser = audioCtx.createAnalyser();
-
   source.connect(analyser);
   analyser.connect(audioCtx.destination);
-  analyser.fftSize = 256; // higher for more detail
-
+  analyser.fftSize = 256;
   const bufferLength = analyser.frequencyBinCount;
   const dataArray = new Uint8Array(bufferLength);
 
+  let animationFrame = null;
   let audioStarted = false;
 
-  // ---------- ANIMATION ----------
-  function animate() {
-    analyser.getByteFrequencyData(dataArray);
+  // ---------- CLEAR ----------
+  function clearAnimation() {
+    if (animationFrame) cancelAnimationFrame(animationFrame);
+    animationFrame = null;
 
     features.forEach((f, i) => {
-      // Map floor to a frequency bin
+      f.properties.base = i * floorHeight;
+      f.properties.height = (i + 1) * floorHeight;
+      f.properties.dynamicColor = DEFAULT_COLOR;
+    });
+    map.getSource('floors').setData({ type: "FeatureCollection", features });
+
+    document.querySelectorAll('#buttons button').forEach(b => b.classList.remove('active'));
+  }
+
+  // ---------- PRESENTATION MODE ----------
+  function startPresentationMode() {
+    clearAnimation();
+    document.getElementById('btn-presentation').classList.add('active');
+    if (!audioStarted) {
+      audioCtx.resume().then(() => {
+        audioElement.play();
+        audioStarted = true;
+        animatePresentation();
+      });
+    } else {
+      animatePresentation();
+    }
+  }
+
+  let effectIndex = 0;
+  const effects = ['wave', 'scanner', 'fire', 'oscillate'];
+  let effectStepTime = 5000; // change effect every 5 seconds
+  let lastEffectChange = performance.now();
+
+  let scanner = 0;
+  let scannerDir = 1;
+
+  function animatePresentation(time) {
+    analyser.getByteFrequencyData(dataArray);
+
+    // Switch effect periodically
+    if (time - lastEffectChange > effectStepTime) {
+      effectIndex = (effectIndex + 1) % effects.length;
+      lastEffectChange = time;
+    }
+
+    const effect = effects[effectIndex];
+
+    features.forEach((f, i) => {
+
+      // Map each floor to a frequency bin
       const binIndex = Math.floor((i / floors) * bufferLength);
-      const intensity = dataArray[binIndex] / 255; // 0-1
+      const intensity = dataArray[binIndex] / 255;
 
-      // Height oscillation
-      const wave = Math.sin(Date.now() * 0.004 + i * 0.5) * 1.5 * intensity;
-      f.properties.base = i * floorHeight + wave;
-      f.properties.height = (i + 1) * floorHeight + wave;
+      // Initialize color & height
+      let color = DEFAULT_COLOR;
+      let wave = 0;
 
-      // Color mapping: gradient + intensity
-      const r = Math.floor(50 + intensity * 205);
-      const g = Math.floor(120 + (i / floors) * 135 * intensity);
-      const b = Math.floor(255 - intensity * 200);
-      f.properties.dynamicColor = `rgb(${r},${g},${b})`;
+      switch(effect) {
+        case 'wave':
+          wave = Math.sin(time*0.003 + i*0.5) * 2 * intensity;
+          const rWave = Math.floor(50 + intensity*205);
+          const gWave = Math.floor(120 + (i/floors)*135*intensity);
+          const bWave = Math.floor(255 - intensity*200);
+          color = `rgb(${rWave},${gWave},${bWave})`;
+          break;
+
+        case 'scanner':
+          // Knight-Rider style
+          const distance = Math.abs(i - scanner);
+          let intensityScanner = Math.max(0, 1 - distance/4);
+          intensityScanner *= intensityScanner; // sharper falloff
+          const rScan = Math.floor(150 + intensityScanner*105);
+          const gScan = Math.floor(intensityScanner*50);
+          const bScan = Math.floor(intensityScanner*50);
+          color = `rgb(${rScan},${gScan},${bScan})`;
+          wave = Math.sin(time*0.002 + i*0.5) * 1.5 * intensity;
+          break;
+
+        case 'fire':
+          // Flickering effect
+          const flicker = Math.random()*50;
+          const rFire = 255;
+          const gFire = Math.floor(i/floors*150 + flicker);
+          const bFire = 0;
+          color = `rgb(${rFire},${gFire},${bFire})`;
+          wave = Math.sin(time*0.004 + i*0.5) * 1.2 * intensity;
+          break;
+
+        case 'oscillate':
+          wave = Math.sin(time*0.002 + i*0.6) * 1.5 * intensity;
+          const glow = Math.floor(120 + ((wave+1.5)/3)*135);
+          color = `rgb(${glow},${glow},255)`;
+          break;
+      }
+
+      f.properties.base = i*floorHeight + wave;
+      f.properties.height = (i+1)*floorHeight + wave;
+      f.properties.dynamicColor = color;
+
     });
 
+    // Update scanner position
+    if (effects[effectIndex] === 'scanner') {
+      scanner += scannerDir;
+      if (scanner >= floors-1 || scanner <= 0) scannerDir *= -1;
+    }
+
     map.getSource('floors').setData({ type: "FeatureCollection", features });
-    requestAnimationFrame(animate);
+
+    animationFrame = requestAnimationFrame(animatePresentation);
   }
 
   // ---------- BUTTON ----------
-  document.getElementById('btn-audio').addEventListener('click', () => {
-    if (!audioStarted) {
-      audioCtx.resume().then(() => {
-        audioElement.play();   // Start audio after user gesture
-        animate();             // Start animation loop
-        audioStarted = true;
-      });
-    }
-    document.getElementById('btn-audio').classList.add('active');
-  });
+  document.getElementById('btn-presentation').addEventListener('click', startPresentationMode);
 
 });
 </script>
