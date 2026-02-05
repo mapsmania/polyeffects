@@ -1,0 +1,560 @@
+<head>
+  <meta charset="utf-8" />
+  <title>Polygon Effects</title>
+  
+  <!-- Basic Meta -->
+  <meta name="description" content="Explore interactive 3D polygon effects with dynamic animations like oscillation, scanner, matrix, and cyberpunk modes.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- Open Graph / Social Sharing -->
+  <meta property="og:title" content="Polygon Effects">
+  <meta property="og:description" content="Interactive 3D polygon animations with multiple modes: scanner, wave, matrix, cyberpunk, and more.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://yourdomain.com/preview-image.png">
+  <meta property="og:url" content="https://yourdomain.com/">
+  
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Polygon Effects">
+  <meta name="twitter:description" content="Interactive 3D polygon animations with multiple modes: scanner, wave, matrix, cyberpunk, and more.">
+  <meta name="twitter:image" content="https://yourdomain.com/preview-image.png">
+
+  <!-- Favicon (replace with your own) -->
+  <link rel="icon" href="https://yourdomain.com/favicon.ico" type="image/x-icon">
+  
+  <!-- MapLibre CSS -->
+  <link href="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.css" rel="stylesheet" />
+  
+  <!-- Optional: Custom CSS -->
+  <style>
+    body { margin: 0; font-family: 'Segoe UI', sans-serif; background: #070b1a; }
+    #map { height: 100vh; width: 100vw; }
+    #buttons { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; gap: 10px; }
+    #buttons button { padding: 8px 12px; background: white; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-weight: bold; transition: all 0.2s; }
+    #buttons button.active { background: #e65100; color: white; border-color: #bf360c; }
+  </style>
+</head>
+
+<body>
+
+<div id="buttons">
+<button id="btn-highlight">Scanner</button>
+<button id="btn-random">Random</button>
+<button id="btn-wave">Wave</button>
+<button id="btn-fire">Fire</button>
+<button id="btn-oscillate">Oscillate</button>
+<button id="btn-knightrider">Knightrider</button>
+<button id="btn-matrix">Matrix</button>
+<button id="btn-cyberpunk">Cyberpunk</button> 
+<button id="btn-presentation">Presentation</button>
+<button id="btn-stop">Stop</button>
+
+
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.js"></script>
+<script>
+
+const map = new maplibregl.Map({
+  style: 'https://tiles.openfreemap.org/styles/bright',
+  center: [13.3881, 52.51735],
+  zoom: 18,
+  pitch: 60,
+  bearing: -20,
+  container: 'map'
+});
+
+map.on('load', () => {
+
+  const floorHeight = 3;
+  const floors = 16;
+  const DEFAULT_COLOR = '#6b7e9c';
+
+  let features = [];
+  let animationInterval = null;
+  let animationFrame = null;
+
+  let currentFloor = 0;
+  let direction = 1;
+  let selectedId = null;
+  let waveStep = 0;
+
+  // ---------- CREATE FLOORS ----------
+  for (let i = 0; i < floors; i++) {
+    features.push({
+      type: "Feature",
+      id: i,
+      properties: {
+        base: i * floorHeight,
+        height: (i + 1) * floorHeight,
+        dynamicColor: DEFAULT_COLOR
+      },
+      geometry: {
+        type: "Polygon",
+        coordinates: [[
+          [13.3878, 52.5168],
+          [13.3884, 52.5168],
+          [13.3884, 52.5173],
+          [13.3878, 52.5173],
+          [13.3878, 52.5168]
+        ]]
+      }
+    });
+  }
+
+
+
+  map.addSource('floors', {
+    type: 'geojson',
+    data: { type: "FeatureCollection", features }
+  });
+
+  map.addLayer({
+    id: 'floor-extrusions',
+    type: 'fill-extrusion',
+    source: 'floors',
+    paint: {
+      'fill-extrusion-color': ['get', 'dynamicColor'],  
+      'fill-extrusion-height': [
+        '+',
+        ['get', 'height'],
+        ['case', ['boolean', ['feature-state', 'selected'], false], 1.5, 0]
+      ],
+      'fill-extrusion-base': ['get', 'base'],
+      'fill-extrusion-opacity': 0.9
+    }
+  });
+
+  // ---------- CLEAR ----------
+  function clearCurrentAnimation() {
+
+    if (animationInterval) clearInterval(animationInterval);
+    if (animationFrame) cancelAnimationFrame(animationFrame);
+
+    animationInterval = null;
+    animationFrame = null;
+
+    if (selectedId !== null) {
+      map.setFeatureState({ source: 'floors', id: selectedId }, { selected: false });
+      selectedId = null;
+    }
+
+    // reset floors
+    features.forEach((f, i) => {
+      f.properties.dynamicColor = DEFAULT_COLOR;
+      f.properties.base = i * floorHeight;
+      f.properties.height = (i + 1) * floorHeight;
+    });
+
+    map.getSource('floors').setData({
+      type: "FeatureCollection",
+      features
+    });
+
+    document.querySelectorAll('#buttons button')
+      .forEach(b => b.classList.remove('active'));
+  }
+
+  const oscillationEffects = {
+
+  wave(time, i) {
+    return Math.sin(time * 0.002 + i * 0.5) * 1.2;
+  },
+
+  breathing(time, i) {
+    return Math.sin(time * 0.0015) * 2;
+  },
+
+  alternating(time, i) {
+    const dir = i % 2 === 0 ? 1 : -1;
+    return Math.sin(time * 0.003) * dir * 1.4;
+  },
+
+  elevator(time, i) {
+
+    const elevator = (time * 0.002) % floors;
+    const dist = Math.abs(i - elevator);
+
+    return Math.max(0, 4 - dist * 1.3);
+  },
+
+  shockwave(time, i) {
+
+    const center = floors / 2;
+    const dist = Math.abs(i - center);
+
+    const pulse = Math.sin(time * 0.004 - dist * 0.8);
+
+    return Math.max(0, pulse) * 3;
+  }
+
+};
+  
+
+  // ---------- SCANNER ----------
+  function startScanner() {
+    clearCurrentAnimation();
+    document.getElementById('btn-highlight').classList.add('active');
+
+    animationInterval = setInterval(() => {
+
+      if (selectedId !== null) {
+        map.setFeatureState({ source: 'floors', id: selectedId }, { selected: false });
+        features[selectedId].properties.dynamicColor = DEFAULT_COLOR;
+      }
+
+      selectedId = currentFloor;
+
+      map.setFeatureState({ source: 'floors', id: selectedId }, { selected: true });
+      features[selectedId].properties.dynamicColor = '#FFD700';
+
+      map.getSource('floors').setData({ type: "FeatureCollection", features });
+
+      currentFloor += direction;
+
+      if (currentFloor >= floors || currentFloor < 0) {
+        direction *= -1;
+        currentFloor += direction * 2;
+      }
+
+    }, 400);
+  }
+
+  // ---------- RANDOM ----------
+  function startRandomMode() {
+    clearCurrentAnimation();
+    document.getElementById('btn-random').classList.add('active');
+
+    animationInterval = setInterval(() => {
+
+      features.forEach(f => {
+        f.properties.dynamicColor =
+          `#${Math.floor(Math.random()*16777215).toString(16).padStart(6,'0')}`;
+      });
+
+      map.getSource('floors').setData({
+        type: "FeatureCollection",
+        features
+      });
+
+    }, 400);
+  }
+
+  // ---------- WAVE ----------
+  function startWaveMode() {
+    clearCurrentAnimation();
+    document.getElementById('btn-wave').classList.add('active');
+
+    animationInterval = setInterval(() => {
+
+      waveStep += 0.5;
+
+      features.forEach((f, i) => {
+
+        const intensity = (Math.sin(waveStep + (i * 0.5)) + 1) / 2;
+
+        const g = Math.floor(100 + (intensity * 155));
+        const b = Math.floor(200 + (intensity * 55));
+
+        f.properties.dynamicColor = `rgb(0,${g},${b})`;
+      });
+
+      map.getSource('floors').setData({
+        type: "FeatureCollection",
+        features
+      });
+
+    }, 100);
+  }
+
+  // ---------- FIRE ----------
+  function startFireMode() {
+    clearCurrentAnimation();
+    document.getElementById('btn-fire').classList.add('active');
+
+    animationInterval = setInterval(() => {
+
+      features.forEach((f, i) => {
+
+        const flicker = Math.random() * 50;
+
+        const r = 255;
+        const g = Math.floor((i / floors) * 150 + flicker);
+        const b = 0;
+
+        f.properties.dynamicColor = `rgb(${r},${g},${b})`;
+      });
+
+      map.getSource('floors').setData({
+        type: "FeatureCollection",
+        features
+      });
+
+    }, 80);
+  }
+
+  // ---------- OSCILLATE (NEW ⭐) ----------
+  function startOscillationMode() {
+    clearCurrentAnimation();
+    document.getElementById('btn-oscillate').classList.add('active');
+
+    const amplitude = 1.2;
+    const speed = 0.0025;
+
+    function animate(time) {
+
+      features.forEach((f, i) => {
+
+        const wave = Math.sin(time * speed + i * 0.6) * amplitude;
+
+        const originalBase = i * floorHeight;
+        const originalHeight = (i + 1) * floorHeight;
+
+        f.properties.base = originalBase + wave;
+        f.properties.height = originalHeight + wave;
+
+        const glow = Math.floor(120 + ((wave + amplitude) / (2 * amplitude)) * 135);
+        f.properties.dynamicColor = `rgb(${glow},${glow},255)`;
+      });
+
+      map.getSource('floors').setData({
+        type: "FeatureCollection",
+        features
+      });
+
+      animationFrame = requestAnimationFrame(animate);
+    }
+
+    animationFrame = requestAnimationFrame(animate);
+  }
+
+    // ---------- KNIGHTRIDER ----------
+function startKnightriderMode() {
+
+  clearCurrentAnimation();
+  document.getElementById('btn-knightrider').classList.add('active');
+
+  let scanner = 0;
+  let dir = 1;
+
+  animationInterval = setInterval(() => {
+
+    features.forEach((f, i) => {
+
+      const distance = Math.abs(i - scanner);
+
+      // strong center, fading tail
+      let intensity = Math.max(0, 1 - distance / 4);
+
+      // square it for sharper glow
+      intensity = intensity * intensity;
+
+      const r = Math.floor(120 + intensity * 135);
+      const g = Math.floor(intensity * 40);
+      const b = Math.floor(intensity * 40);
+
+      f.properties.dynamicColor = `rgb(${r},${g},${b})`;
+
+    });
+
+    map.getSource('floors').setData({
+      type: "FeatureCollection",
+      features
+    });
+
+    scanner += dir;
+
+    if (scanner >= floors - 1 || scanner <= 0) {
+      dir *= -1;
+    }
+
+  }, 90); // fast = smoother scanner
+}
+
+    // ---------- MATRIX ----------
+function startMatrixMode() {
+
+  clearCurrentAnimation();
+  document.getElementById('btn-matrix').classList.add('active');
+
+  // One "raindrop" per column
+  let drops = new Array(floors)
+    .fill(0)
+    .map(() => Math.floor(Math.random() * floors));
+
+  animationInterval = setInterval(() => {
+
+    features.forEach((f, i) => {
+
+      let brightness = 0;
+
+      // Check each drop
+      drops.forEach(drop => {
+
+        const distance = drop - i;
+
+        // bright head
+        if (distance === 0) {
+          brightness = 1;
+        }
+
+        // fading tail
+        else if (distance > 0 && distance < 6) {
+          brightness = Math.max(brightness, 1 - distance / 6);
+        }
+      });
+
+      // Convert brightness → Matrix green
+      const g = Math.floor(120 + brightness * 135);
+      const r = Math.floor(brightness * 40);
+      const b = Math.floor(brightness * 40);
+
+      f.properties.dynamicColor =
+        brightness > 0
+          ? `rgb(${r},${g},${b})`
+          : 'rgb(10,40,10)'; // dark green background
+    });
+
+    map.getSource('floors').setData({
+      type: "FeatureCollection",
+      features
+    });
+
+    // Move drops downward
+    drops = drops.map(drop => {
+
+      drop--;
+
+      // respawn at top randomly
+      if (drop < -6) {
+        return floors + Math.floor(Math.random() * 10);
+      }
+
+      return drop;
+    });
+
+  }, 90);
+}
+
+// ---------- CYBERPUNK ----------
+function startCyberpunkMode() {
+
+  clearCurrentAnimation();
+  document.getElementById('btn-cyberpunk').classList.add('active');
+
+  function animate(time) {
+
+    const t = time * 0.002;
+
+    features.forEach((f, i) => {
+
+      const heightRatio = i / floors;
+
+      // traveling energy band
+      const band = Math.sin((heightRatio * 10) - t * 4);
+
+      // base neon gradient (magenta -> cyan)
+      let r = Math.floor(180 + 75 * Math.sin(t + i * 0.25));
+      let g = Math.floor(60 + 40 * Math.sin(t * 1.5 + i));
+      let b = Math.floor(200 + 55 * Math.cos(t + i * 0.3));
+
+      // brighten when energy band passes
+      if (band > 0.75) {
+        r = 255;
+        g = 120;
+        b = 255;
+      }
+
+      // hologram flicker (rare brightness spikes)
+      if (Math.random() > 0.985) {
+        r = 255;
+        g = 255;
+        b = 255;
+      }
+
+      f.properties.dynamicColor = `rgb(${r},${g},${b})`;
+
+    });
+
+    map.getSource('floors').setData({
+      type: "FeatureCollection",
+      features
+    });
+
+    animationFrame = requestAnimationFrame(animate);
+  }
+
+  animationFrame = requestAnimationFrame(animate);
+}
+
+    function startPresentationMode() {
+
+  clearCurrentAnimation();
+  document.getElementById('btn-presentation').classList.add('active');
+
+  const effectNames = Object.keys(oscillationEffects);
+  let effectIndex = 0;
+  let currentEffect = oscillationEffects[effectNames[effectIndex]];
+
+  // change effect every 6 seconds
+  animationInterval = setInterval(() => {
+
+    effectIndex = (effectIndex + 1) % effectNames.length;
+    currentEffect = oscillationEffects[effectNames[effectIndex]];
+
+  }, 6000);
+
+
+  function animate(time) {
+
+    features.forEach((f, i) => {
+
+      const offset = currentEffect(time, i);
+
+      const base = i * floorHeight;
+      const height = (i + 1) * floorHeight;
+
+      f.properties.base = base + offset;
+      f.properties.height = height + offset;
+
+      // premium glow coloring
+      const glow = Math.floor(140 + (offset + 3) * 25);
+      f.properties.dynamicColor = `rgb(${glow},${glow},255)`;
+    });
+
+    map.getSource('floors').setData({
+      type: "FeatureCollection",
+      features
+    });
+
+    animationFrame = requestAnimationFrame(animate);
+  }
+
+  animationFrame = requestAnimationFrame(animate);
+}
+
+
+
+  // ---------- BUTTONS ----------
+  document.getElementById('btn-highlight').onclick = startScanner;
+  document.getElementById('btn-random').onclick = startRandomMode;
+  document.getElementById('btn-wave').onclick = startWaveMode;
+  document.getElementById('btn-fire').onclick = startFireMode;
+  document.getElementById('btn-oscillate').onclick = startOscillationMode;
+  document.getElementById('btn-knightrider').onclick = startKnightriderMode;
+  document.getElementById('btn-stop').onclick = clearCurrentAnimation;
+  document.getElementById('btn-cyberpunk').onclick = startCyberpunkMode;
+  document.getElementById('btn-presentation').onclick = startPresentationMode;
+  document.getElementById('btn-matrix').onclick = startMatrixMode;
+
+
+  // Start with scanner
+  startScanner();
+
+});
+</script>
+
+</body>
+</html>
