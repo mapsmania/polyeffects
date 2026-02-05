@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Polygon Effects - Audio Reactive</title>
+  <link href="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.css" rel="stylesheet" />
+  <style>
+    body { margin:0; background: #070b1a; font-family: sans-serif; }
+    #map { height:100vh; width:100vw; }
+    #buttons {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      display: flex;
+      gap: 10px;
+    }
+    #buttons button {
+      padding: 8px 12px;
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: all 0.2s;
+    }
+    #buttons button.active {
+      background: #e65100;
+      color: white;
+      border-color: #bf360c;
+    }
+  </style>
+</head>
+<body>
+
+<div id="buttons">
+  <button id="btn-audio">Audio Reactive</button>
+</div>
+
+<div id="map"></div>
+
+<!-- Remove autoplay, we will start audio on button click -->
+<audio id="audio" src="dance.mp3" controls loop></audio>
+
+<script src="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.js"></script>
+<script>
+const map = new maplibregl.Map({
+  style: 'https://tiles.openfreemap.org/styles/bright',
+  center: [13.3881, 52.5173], // slightly lower so polygon sits near bottom
+  zoom: 18,
+  pitch: 60,
+  bearing: -20,
+  container: 'map'
+});
+
+map.on('load', () => {
+
+  const floorHeight = 3;
+  const floors = 16;
+  const DEFAULT_COLOR = '#6b7e9c';
+  let features = [];
+
+  // ---------- CREATE FLOORS ----------
+  for (let i = 0; i < floors; i++) {
+    features.push({
+      type: "Feature",
+      id: i,
+      properties: {
+        base: i * floorHeight,
+        height: (i + 1) * floorHeight,
+        dynamicColor: DEFAULT_COLOR
+      },
+      geometry: {
+        type: "Polygon",
+        coordinates: [[
+          [13.3878, 52.5168],
+          [13.3884, 52.5168],
+          [13.3884, 52.5173],
+          [13.3878, 52.5173],
+          [13.3878, 52.5168]
+        ]]
+      }
+    });
+  }
+
+  map.addSource('floors', {
+    type: 'geojson',
+    data: { type: "FeatureCollection", features }
+  });
+
+  map.addLayer({
+    id: 'floor-extrusions',
+    type: 'fill-extrusion',
+    source: 'floors',
+    paint: {
+      'fill-extrusion-color': ['get', 'dynamicColor'],
+      'fill-extrusion-height': ['get', 'height'],
+      'fill-extrusion-base': ['get', 'base'],
+      'fill-extrusion-opacity': 0.9
+    }
+  });
+
+  // ---------- AUDIO SETUP ----------
+  const audioElement = document.getElementById('audio');
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const source = audioCtx.createMediaElementSource(audioElement);
+  const analyser = audioCtx.createAnalyser();
+
+  source.connect(analyser);
+  analyser.connect(audioCtx.destination);
+  analyser.fftSize = 128; // smaller = smoother, larger = more detailed
+
+  const bufferLength = analyser.frequencyBinCount;
+  const dataArray = new Uint8Array(bufferLength);
+
+  let audioStarted = false;
+
+  // ---------- ANIMATION ----------
+  function animate() {
+    analyser.getByteFrequencyData(dataArray);
+
+    const avg = dataArray.reduce((sum, v) => sum + v, 0) / bufferLength;
+    const intensity = avg / 255; // normalized 0–1
+
+    features.forEach((f, i) => {
+      // Oscillate floors based on audio
+      const wave = Math.sin(Date.now() * 0.002 + i * 0.5) * 1.5 * intensity;
+      f.properties.base = i * floorHeight + wave;
+      f.properties.height = (i + 1) * floorHeight + wave;
+
+      // Color mapped to intensity and floor index
+      const r = Math.floor(120 + intensity * 135);
+      const g = Math.floor(50 + (i / floors) * 205 * intensity);
+      const b = Math.floor(200 * (1 - intensity));
+      f.properties.dynamicColor = `rgb(${r},${g},${b})`;
+    });
+
+    map.getSource('floors').setData({ type: "FeatureCollection", features });
+    requestAnimationFrame(animate);
+  }
+
+  // ---------- BUTTON ----------
+  document.getElementById('btn-audio').addEventListener('click', () => {
+    if (!audioStarted) {
+      audioCtx.resume().then(() => {
+        audioElement.play();   // Start audio after user gesture
+        animate();             // Start animation loop
+        audioStarted = true;
+      });
+    }
+    document.getElementById('btn-audio').classList.add('active');
+  });
+
+});
+</script>
+</body>
+</html>
