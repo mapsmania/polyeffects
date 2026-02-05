@@ -40,14 +40,14 @@
 
 <div id="map"></div>
 
-<!-- Remove autoplay, we will start audio on button click -->
+<!-- Use a hosted MP3 with CORS -->
 <audio id="audio" src="dance.mp3" controls loop></audio>
 
 <script src="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.js"></script>
 <script>
 const map = new maplibregl.Map({
   style: 'https://tiles.openfreemap.org/styles/bright',
-  center: [13.3881, 52.5173], // slightly lower so polygon sits near bottom
+  center: [13.3881, 52.5173],
   zoom: 18,
   pitch: 60,
   bearing: -20,
@@ -109,7 +109,7 @@ map.on('load', () => {
 
   source.connect(analyser);
   analyser.connect(audioCtx.destination);
-  analyser.fftSize = 128; // smaller = smoother, larger = more detailed
+  analyser.fftSize = 256; // higher for more detail
 
   const bufferLength = analyser.frequencyBinCount;
   const dataArray = new Uint8Array(bufferLength);
@@ -120,19 +120,20 @@ map.on('load', () => {
   function animate() {
     analyser.getByteFrequencyData(dataArray);
 
-    const avg = dataArray.reduce((sum, v) => sum + v, 0) / bufferLength;
-    const intensity = avg / 255; // normalized 0–1
-
     features.forEach((f, i) => {
-      // Oscillate floors based on audio
-      const wave = Math.sin(Date.now() * 0.002 + i * 0.5) * 1.5 * intensity;
+      // Map floor to a frequency bin
+      const binIndex = Math.floor((i / floors) * bufferLength);
+      const intensity = dataArray[binIndex] / 255; // 0-1
+
+      // Height oscillation
+      const wave = Math.sin(Date.now() * 0.004 + i * 0.5) * 1.5 * intensity;
       f.properties.base = i * floorHeight + wave;
       f.properties.height = (i + 1) * floorHeight + wave;
 
-      // Color mapped to intensity and floor index
-      const r = Math.floor(120 + intensity * 135);
-      const g = Math.floor(50 + (i / floors) * 205 * intensity);
-      const b = Math.floor(200 * (1 - intensity));
+      // Color mapping: gradient + intensity
+      const r = Math.floor(50 + intensity * 205);
+      const g = Math.floor(120 + (i / floors) * 135 * intensity);
+      const b = Math.floor(255 - intensity * 200);
       f.properties.dynamicColor = `rgb(${r},${g},${b})`;
     });
 
